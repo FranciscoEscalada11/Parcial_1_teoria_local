@@ -1,10 +1,9 @@
 package ar.unrn;
-import java.util.Scanner;
-import java.util.Arrays;
+
 /**
  * Parcial 1 - 2026 - Francisco Thomas Escalada
  */
-public class PlantillaApp {
+public class TelemetriaApp {
 
     /*
     * Recorre dos arreglos de String convirtiendo cada elemento de los arreglos en enteros y asi al dividirlos

@@ -1,7 +1,6 @@
 package ar.unrn;
 
 import org.junit.jupiter.api.Assertions;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -12,7 +11,7 @@ import org.junit.jupiter.api.Test;
  * Este conjunto de casos es una plantilla.
  */
 @DisplayName("Ejercicio 1")
-class PlantillaAppTest {
+class TelemetriaAppTest {
 
     /**
      * Este caso es una plantilla.
