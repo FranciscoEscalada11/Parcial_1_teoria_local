@@ -2,10 +2,7 @@ package ar.unrn;
 import java.util.Scanner;
 import java.util.Arrays;
 /**
- * Esta es una plantilla de main.
- * Usen Shift+F6 sobre el nombre para cambiarlo al que necesiten.
- * ¡Esto lo pueden utilizar en cualquier identificador!
- * Acá va la consigna del ejercicio.
+ * Parcial 1 - 2026 - Francisco Thomas Escalada
  */
 public class PlantillaApp {
 
@@ -63,9 +60,10 @@ public class PlantillaApp {
      * @param args son los argumentos de invocación.
      */
     public static void main(String[] args) {
-        String[] lecturas = {"123","345","0","12"};
-        String[] factores = {"45","22","11"};
-        String[] salida = normalizarTelemetria(lecturas,factores,3);
+        String[] lecturas = {"123","345","0","12","2"};
+        String[] factores = {"45","22","11", "0"};
+        String[] salida = normalizarTelemetria(lecturas,factores,5
+        );
         for(int i = 0; i < salida.length; i++){
             System.out.println(salida[i]);
         }
