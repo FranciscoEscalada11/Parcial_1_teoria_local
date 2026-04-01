@@ -51,6 +51,11 @@ public class PlantillaApp {
      * @param args son los argumentos de invocación.
      */
     public static void main(String[] args) {
-        System.out.println("Completar con el main");
+        String[] lecturas = {"123","345","0","12"};
+        String[] factores = {"45","22","11"};
+        String[] salida = normalizarTelemetria(lecturas,factores,3);
+        for(int i = 0; i < salida.length; i++){
+            System.out.println(salida[i]);
+        }
     }
 }
