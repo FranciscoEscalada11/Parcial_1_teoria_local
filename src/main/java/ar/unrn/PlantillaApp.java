@@ -18,7 +18,8 @@ public class PlantillaApp {
     * @post Si alguno de los Strings es null, la fila correspondiente del arreglo de salida mostrara el mensaje de
     * error ERROR_NULO
     * @post Si al momento de la decodificacion el valor del arreglo factores es 0, este se posicionara como divisor
-    * por lo que en la fila del arreglo de salida correspondiente se vera el mensaje de error ERROR_DIV_ZERO*/
+    * por lo que en la fila del arreglo de salida correspondiente se vera el mensaje de error ERROR_DIV_ZERO
+    * */
     public static String[] normalizarTelemetria(String[] lecturas, String[] factores, int capacidad){
         int lLecturas = lecturas.length;
         int lFactores = lecturas.length;
@@ -31,6 +32,7 @@ public class PlantillaApp {
                 }
             }catch (IndexOutOfBoundsException e){
                 System.out.println("ERR_INDICE" + e.getMessage());
+                salida[i] = "ERR_INDICE";
             }
             try{
                 if (lecturas[i] == null || factores[i] == null){
@@ -60,10 +62,9 @@ public class PlantillaApp {
      * @param args son los argumentos de invocación.
      */
     public static void main(String[] args) {
-        String[] lecturas = {"123","345","0","12","2"};
-        String[] factores = {"45","22","11", "0"};
-        String[] salida = normalizarTelemetria(lecturas,factores,5
-        );
+        String[] lecturas = {"123","345","0","12"};
+        String[] factores = {"45","22","11", "0",};
+        String[] salida = normalizarTelemetria(lecturas,factores,4);
         for(int i = 0; i < salida.length; i++){
             System.out.println(salida[i]);
         }
