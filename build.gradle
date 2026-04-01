@@ -1,0 +1,562 @@
+// ============================================================================
+// Build Configuration Enhanced - Programación 2 UNRN
+// Edición 2026
+// ============================================================================
+
+
+import com.github.spotbugs.snom.Confidence
+import com.github.spotbugs.snom.Effort
+import com.github.spotbugs.snom.SpotBugsTask
+import groovy.xml.XmlSlurper
+import net.ltgt.gradle.errorprone.CheckSeverity
+
+import javax.xml.transform.TransformerFactory
+import javax.xml.transform.stream.StreamResult
+import javax.xml.transform.stream.StreamSource
+import java.time.Duration
+
+import static net.ltgt.gradle.errorprone.CheckSeverity.ERROR
+
+plugins {
+    id 'java'
+    id 'pmd'
+    id 'checkstyle'
+    id 'application'
+    id 'com.github.spotbugs' version '6.4.8'
+    id 'jacoco'
+    id 'info.solidsoft.pitest' version '1.19.0-rc.3'
+    id 'net.ltgt.errorprone' version '3.1.0'
+}
+
+// ============================================================================
+// CONFIGURACIÓN BÁSICA
+// ============================================================================
+
+java {
+    toolchain {
+        languageVersion.set(JavaLanguageVersion.of(25))
+    }
+}
+
+application {
+    mainClass = 'ar.unrn.LoaderApp'
+}
+
+run {
+    standardInput = System.in
+}
+
+group = 'ar.unrn'
+version = '1.0-SNAPSHOT'
+
+repositories {
+    mavenCentral()
+}
+
+// ============================================================================
+// DEPENDENCIAS
+// ============================================================================
+
+dependencies {
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.9.2'
+    // ========== FASE 1: ArchUnit para reglas de arquitectura ==========
+    // Reglas: 0x2001, 0x2003, 0x2008, 0x2009, 0x200C, 0x200D, 0x2012
+    testImplementation 'com.tngtech.archunit:archunit-junit5:1.2.1'
+
+    // ========== FASE 1: Error Prone + NullAway ==========
+    // Error Prone - Reglas: 0xE001, 0xE002, 0xE003, 0xE004, 0x200F, 0x2010
+    errorprone 'com.google.errorprone:error_prone_core:2.48.0'
+
+    // NullAway - Reglas: 0x200B, 0x2011, 0x3006, 0x3007
+    errorprone 'com.uber.nullaway:nullaway:0.13.1'
+
+    // Anotaciones para NullAway
+    compileOnly 'com.google.code.findbugs:jsr305:3.0.2'
+    testCompileOnly 'com.google.code.findbugs:jsr305:3.0.2'
+}
+
+// ============================================================================
+// TESTING
+// ============================================================================
+
+
+test {
+    useJUnitPlatform()
+    timeout = Duration.ofMinutes(5) // Cinco minutos para resolver cuelgues en los tests.
+    finalizedBy jacocoTestReport
+
+    // Configuración para mejor output
+    testLogging {
+        events = ["passed", "skipped", "failed"]
+        exceptionFormat = "full"
+        showStandardStreams = false
+    }
+}
+
+// ============================================================================
+// JACOCO - COBERTURA DE CÓDIGO
+// ============================================================================
+
+jacoco {
+    toolVersion = "0.8.14"
+}
+
+jacocoTestReport {
+    dependsOn test
+    reports {
+        xml.required.set(true)
+        csv.required.set(true)
+    }
+    // Excluir clases generadas y métodos main
+    classDirectories.setFrom(
+            files(classDirectories.files.collect {
+                fileTree(dir: it, exclude: [
+                        '**/LoaderApp.class',
+                        '**/PlantillaApp.class',
+                        '**/*Test.class'
+                ])
+            })
+    )
+}
+
+jacocoTestCoverageVerification {
+    // Excluir métodos main de la verificación
+    violationRules {
+        rule {
+            element = 'CLASS'
+            limit {
+                minimum = 0.50  // 50% cobertura mínima
+            }
+            excludes = [
+                '*.LoaderApp',
+                '*.PlantillaApp'
+            ]
+        }
+    }
+}
+
+
+// ============================================================================
+// PMD - ANÁLISIS ESTÁTICO
+// ============================================================================
+
+pmd {
+    toolVersion = "7.16.0"
+    consoleOutput = false
+    ignoreFailures = false
+    ruleSetFiles = files('config/pmd/programacion2.xml')
+    ruleSets = []
+}
+
+tasks.withType(Pmd).configureEach {
+    def projectRootPath = project.projectDir.absolutePath
+    reports {
+        xml.required.set(true)
+        html.required.set(true)
+    }
+    // Excluir PlantillaApp (es solo una plantilla vacía)
+    exclude '**/PlantillaApp.java'
+    
+    ignoreFailures = true
+    
+    doLast {
+        def reportFile = reports.xml.outputLocation.asFile.get()
+        if (reportFile.exists() && reportFile.length() > 0) {
+            def parser = new XmlSlurper()
+            parser.setFeature("http://apache.org/xml/features/disallow-doctype-decl", false)
+            parser.setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false)
+            def pmdXml = parser.parse(reportFile)
+            
+            def violations = pmdXml.file.collect { file ->
+                file.violation.collect { violation ->
+                    [
+                        file: file.@name.toString().replace(projectRootPath + '/', ''),
+                        line: violation.@beginline.toString(),
+                        rule: violation.@rule.toString(),
+                        priority: violation.@priority.toString(),
+                        message: violation.text().trim()
+                    ]
+                }
+            }.flatten()
+            
+            if (!violations.isEmpty()) {
+                println "\n═══════════════════════════════════════════════════════════════"
+                println "PMD - Problemas detectados: ${violations.size()}"
+                println "═══════════════════════════════════════════════════════════════\n"
+                
+                violations.each { v ->
+                    println "📍 ${v.file}:${v.line}"
+                    println "   Regla: ${v.rule} [Prioridad: ${v.priority}]"
+                    println "   ${v.message}"
+                    println ""
+                }
+                
+                def htmlReport = reports.html.outputLocation.asFile.get()
+                println "═══════════════════════════════════════════════════════════════"
+                println "Ver reporte completo: ${htmlReport}"
+                println "═══════════════════════════════════════════════════════════════\n"
+                
+                throw new GradleException("${violations.size()} PMD rule violations were found. See the report at: ${htmlReport}")
+            }
+        }
+    }
+}
+
+// ============================================================================
+// SPOTBUGS - DETECCIÓN DE BUGS
+// ============================================================================
+
+
+spotbugs {
+    toolVersion = '4.9.8'
+    ignoreFailures = false
+    effort = Effort.valueOf('MAX')
+    reportLevel = Confidence.valueOf('LOW')
+}
+
+tasks.withType(SpotBugsTask).configureEach {
+    reports {
+        html.required.set(true)
+        xml.required.set(true)
+    }
+}
+
+// ============================================================================
+// CHECKSTYLE - ESTILO DE CÓDIGO
+// ============================================================================
+
+checkstyle {
+    toolVersion = '10.21.4'
+    configFile = rootProject.file("config/checkstyle/checkstyle.xml")
+    ignoreFailures = false
+}
+
+tasks.withType(Checkstyle).configureEach {
+    reports {
+        xml.required.set(true)
+        html.required.set(true)
+    }
+}
+
+// ============================================================================
+// ERROR PRONE - DETECCIÓN DE BUGS EN COMPILACIÓN (FASE 1)
+// ============================================================================
+// Reglas automatizadas adicionales: 6
+// 0xE001, 0xE002, 0xE003, 0xE004, 0x200F, 0x2010
+// ============================================================================
+
+tasks.withType(JavaCompile).configureEach {
+    options.errorprone {
+        disableWarningsInGeneratedCode = true
+
+        // Checks válidos de Error Prone
+        check("MissingOverride", ERROR)
+        check("ModifyCollectionInEnhancedForLoop", ERROR)
+        check("ReturnValueIgnored", ERROR)
+        check("CheckReturnValue", ERROR)
+        check("EqualsIncompatibleType", ERROR)
+        check("EqualsHashCode", ERROR)
+        check("DeadException", ERROR)
+
+        // NullAway
+        check("NullAway", ERROR)
+        option("NullAway:AnnotatedPackages", "ar.unrn")
+        option("NullAway:TreatGeneratedAsUnannotated", "true")
+        option("NullAway:CheckOptionalEmptiness", "true")
+        option("NullAway:ExcludedClassAnnotations", "org.junit.jupiter.api.Test")
+    }
+
+    options.compilerArgs << '-parameters'
+    // Required for Error Prone 2.48+ with Gradle 9
+    options.compilerArgs << '-XDshould-stop.ifError=FLOW'
+}
+
+// ============================================================================
+// PITEST - MUTATION TESTING (FASE 2)
+// ============================================================================
+// Reglas automatizadas adicionales: 4
+// 0x4001, 0x4002, 0x4004, 0x4005
+// ============================================================================
+
+pitest {
+    targetClasses = ['ar.unrn.*']
+    targetTests = ['ar.unrn.*Test']
+
+    // JUnit 5 plugin
+    junit5PluginVersion = '1.2.1'
+
+    // Performance
+    threads = Runtime.runtime.availableProcessors()
+
+    // Reportes
+    outputFormats = ['HTML', 'XML']
+    timestampedReports = false
+
+    // Mutadores para detectar tests débiles
+    mutators = [
+            'CONDITIONALS_BOUNDARY',
+            'INCREMENTS',
+            'INVERT_NEGS',
+            'MATH',
+            'NEGATE_CONDITIONALS',
+            'EMPTY_RETURNS',
+            'FALSE_RETURNS',
+            'TRUE_RETURNS',
+            'NULL_RETURNS',
+            'PRIMITIVE_RETURNS',
+            'VOID_METHOD_CALLS'
+    ]
+
+    // Umbrales de calidad (ajustados a la cobertura real del código de negocio)
+    mutationThreshold = 80
+    coverageThreshold = 54
+
+    // Excluir métodos main y clases específicas
+    excludedMethods = ['main']
+    excludedClasses = [
+            'ar.unrn.LoaderApp',
+            'ar.unrn.PlantillaApp',
+            'ar.unrn.*.*Builder'
+    ]
+}
+
+// ============================================================================
+// VERIFICACIÓN DE CALIDAD DE TESTS (FASE 2)
+// ============================================================================
+// Reglas: 0x4004 - Tests sin lógica condicional
+// ============================================================================
+
+tasks.register('verifyTestQuality') {
+    description = 'Verifica que los tests no contengan lógica condicional (regla 0x4004)'
+    group = 'verification'
+    
+    mustRunAfter test
+    
+    doLast {
+        def testFiles = fileTree('src/test/java') {
+            include '**/*Test.java'
+        }
+        
+        def violations = []
+        
+        testFiles.each { file ->
+            def content = file.text
+            def lineNumber = 0
+            
+            content.eachLine { line, num ->
+                lineNumber = num
+                
+                // Detectar estructuras condicionales
+                if (line =~ /\s+if\s*\(/ || 
+                    line =~ /\s+for\s*\(/ || 
+                    line =~ /\s+while\s*\(/ || 
+                    line =~ /\s+switch\s*\(/) {
+                    
+                    // Excluir líneas en comentarios
+                    if (!(line.trim().startsWith('//'))) {
+                        violations << "[0x4004] ${file.name}:${lineNumber} - " +
+                                     "Test con lógica condicional: ${line.trim()}"
+                    }
+                }
+            }
+        }
+        
+        if (!violations.isEmpty()) {
+            println "\n═══════════════════════════════════════════════════════════════"
+            println "Verificación de Calidad de Tests - Violaciones encontradas"
+            println "═══════════════════════════════════════════════════════════════\n"
+            
+            violations.each { v ->
+                println "❌ ${v}"
+            }
+            
+            println "\n═══════════════════════════════════════════════════════════════"
+            println "Regla 0x4004: Los tests no deben contener lógica condicional"
+            println "Los tests deben ser simples y directos sin if/for/while/switch"
+            println "═══════════════════════════════════════════════════════════════\n"
+            
+            throw new GradleException(
+                "${violations.size()} violation(s) found in test quality check")
+        } else {
+            println "\n✅ Verificación de calidad de tests: PASSED\n"
+        }
+    }
+}
+
+// ============================================================================
+// DREDD - GENERACIÓN DE REPORTE CONSOLIDADO
+// ============================================================================
+
+tasks.register('analyzeAll') {
+    description = 'Ejecuta todos los análisis de código y verificaciones de calidad'
+    group = 'verification'
+    
+    dependsOn 'clean'
+    dependsOn 'test'
+    dependsOn 'jacocoTestReport'
+    dependsOn 'checkstyleMain'
+    dependsOn 'checkstyleTest'
+    dependsOn 'pmdMain'
+    dependsOn 'pmdTest'
+    dependsOn 'spotbugsMain'
+    dependsOn 'verifyTestQuality'
+    
+    // ArchUnit se ejecuta automáticamente con test
+    
+    finalizedBy 'dredd'
+}
+
+tasks.register('dredd') {
+    description = 'Genera un reporte consolidado en Markdown con resultados de todas las herramientas de verificación'
+    group = 'verification'
+
+    def projectRoot = project.layout.projectDirectory
+    def buildDir = project.layout.buildDirectory
+
+    // Se ejecuta después de todas las tareas de verificación
+    mustRunAfter check, test, checkstyleMain, checkstyleTest, pmdMain, pmdTest, spotbugsMain, spotbugsTest, jacocoTestReport
+
+    doLast {
+        def reportDir = buildDir.dir("reports").get().asFile
+        def dreddReport = new File(reportDir, "dredd.md")
+        def projectRootDir = projectRoot.asFile
+
+        // Asegurar que el directorio de reportes existe
+        reportDir.mkdirs()
+
+        def content = new StringBuilder()
+
+        // Header
+        def headerFile = projectRoot.file("config/dredd/header.md").asFile
+        if (headerFile.exists()) {
+            content.append(headerFile.text)
+        } else {
+            content.append("# El juez Dredd\n")
+        }
+
+        // Checkstyle código
+        content.append("\n## Checkstyle código\n")
+        def checkstyleXml = buildDir.file("reports/checkstyle/main.xml").get().asFile
+        def checkstyleXsl = projectRoot.file("config/stylesheets/checkstyle.xsl").asFile
+        if (checkstyleXml.exists() && checkstyleXsl.exists()) {
+            content.append(transformXml(checkstyleXml, checkstyleXsl, projectRootDir))
+        } else {
+            content.append("No se encontró el reporte de Checkstyle.\n")
+        }
+
+        // PMD código
+        content.append("\n## PMD código\n")
+        def pmdXml = buildDir.file("reports/pmd/main.xml").get().asFile
+        def pmdXsl = projectRoot.file("config/stylesheets/pmd.xsl").asFile
+        if (pmdXml.exists() && pmdXsl.exists()) {
+            content.append(transformXml(pmdXml, pmdXsl, projectRootDir))
+        } else {
+            content.append("No se encontró el reporte de PMD.\n")
+        }
+
+        // SpotBugs
+        content.append("\n## SpotBugs\n")
+        def spotbugsXml = buildDir.file("reports/spotbugs/main.xml").get().asFile
+        if (spotbugsXml.exists() && spotbugsXml.length() > 0) {
+            content.append(parseSpotBugsXml(spotbugsXml, projectRootDir))
+        } else {
+            content.append("No se encontraron bugs con SpotBugs. ✓\n")
+        }
+
+        // JaCoCo - Cobertura
+        content.append("\n## Cobertura de código (JaCoCo)\n")
+        def jacocoXml = buildDir.file("reports/jacoco/test/jacocoTestReport.xml").get().asFile
+        def jacocoXsl = projectRoot.file("config/stylesheets/jacoco.xsl").asFile
+        if (jacocoXml.exists() && jacocoXsl.exists()) {
+            content.append(parseJacocoCoverage(jacocoXml))
+        } else {
+            content.append("No se encontró el reporte de cobertura.\n")
+        }
+
+        // Tests
+        content.append("\n## Conan ejecuta los Tests\n")
+        def testResultsDir = buildDir.dir("test-results/test").get().asFile
+        def junitXsl = projectRoot.file("config/stylesheets/junit.xsl").asFile
+        if (testResultsDir.exists() && junitXsl.exists()) {
+            testResultsDir.eachFileMatch(~/.*\.xml/) { testXml ->
+                content.append(transformXml(testXml, junitXsl, projectRootDir))
+            }
+        } else {
+            content.append("No se encontraron resultados de tests.\n")
+        }
+
+        // Footer
+        def footerFile = projectRoot.file("config/dredd/footer.md").asFile
+        if (footerFile.exists()) {
+            content.append(footerFile.text)
+        }
+
+        dreddReport.text = content.toString()
+        println "Reporte Dredd generado en: ${dreddReport}"
+    }
+}
+
+static String transformXml(File xmlFile, File xslFile, File projectRoot) {
+    def factory = TransformerFactory.newInstance()
+    def xslSource = new StreamSource(xslFile)
+    def transformer = factory.newTransformer(xslSource)
+
+    def xmlSource = new StreamSource(xmlFile)
+    def writer = new StringWriter()
+    def result = new StreamResult(writer)
+
+    transformer.transform(xmlSource, result)
+
+    // Remover paths absolutos del proyecto
+    return writer.toString().replace(projectRoot.absolutePath + "/", "")
+}
+
+static String parseSpotBugsXml(File xmlFile, File projectRoot) {
+    def content = new StringBuilder()
+    def xml = new XmlSlurper().parse(xmlFile)
+
+    def bugs = xml.BugInstance
+    if (bugs.size() == 0) {
+        content.append("No se encontraron bugs. ✓\n")
+        return content.toString()
+    }
+
+    content.append("| Tipo | Categoría | Clase | Mensaje |\n")
+    content.append("|:----:|:---------:|:-----:|:--------|\n")
+
+    bugs.each { bug ->
+        def type = bug.@type.toString()
+        def category = bug.@category.toString()
+        def className = bug.Class.@classname.toString()
+        def message = bug.LongMessage.text().toString().replace("|", "\\|")
+        content.append("|${type}|${category}|${className}|${message}|\n")
+    }
+
+    return content.toString()
+}
+
+static String parseJacocoCoverage(File xmlFile) {
+    def content = new StringBuilder()
+    def parser = new XmlSlurper()
+    parser.setFeature("http://apache.org/xml/features/disallow-doctype-decl", false)
+    parser.setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false)
+    def xml = parser.parse(xmlFile)
+
+    // Obtener contadores a nivel de reporte
+    def counters = xml.counter
+    content.append("\n### Resumen de cobertura\n\n")
+    content.append("| Tipo | Cubierto | Perdido | Porcentaje |\n")
+    content.append("|:----:|:--------:|:-------:|:----------:|\n")
+
+    counters.each { counter ->
+        def type = counter.@type.toString()
+        def covered = counter.@covered.toString().toInteger()
+        def missed = counter.@missed.toString().toInteger()
+        def total = covered + missed
+        def percentage = total > 0 ? String.format("%.1f%%", (covered * 100.0 / total)) : "N/A"
+        content.append("|${type}|${covered}|${missed}|${percentage}|\n")
+    }
+
+    return content.toString()
+}
+
