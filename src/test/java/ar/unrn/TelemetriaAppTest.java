@@ -17,8 +17,15 @@ class TelemetriaAppTest {
      * Este caso es una plantilla.
      */
     @Test
-    @DisplayName("Completar que se esta probando")
-    void testPlantilla() {
-        Assertions.fail("Test incompleto");
+    @DisplayName("Division por Cero")
+    void testPlantilla()
+    {
+        String[] lecturas = {"123","345","0","12"};
+        String[] factores = {"45","22","11", "0",};
+        String[] salida = {"2","15","0","ERR_DIV_ZERO"};
+        String mensaje = "ERR_DIV_ZERO";
+        String[] resultado = TelemetriaApp.normalizarTelemetria(lecturas,factores,4);
+        Assertions.assertArrayEquals(resultado, salida);
+        Assertions.assertArrayEquals(mensaje, resultado[3]);
     }
 }
